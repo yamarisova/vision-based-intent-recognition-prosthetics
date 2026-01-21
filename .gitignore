@@ -1,0 +1,42 @@
+# Python / venv
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+
+# Logs / runs / experiments
+logs/
+runs_*/
+events_snaps*/
+events_snaps_*/
+*.log
+
+# Large artifacts (do NOT commit)
+*.keras
+*.h5
+*.tflite
+*.onnx
+*.pt
+*.pth
+*.pkl
+*.joblib
+
+# Media
+*.mp4
+*.mov
+*.MOV
+*.avi
+*.png
+*.jpg
+*.jpeg
+
+# Data
+data/
+dataset/
