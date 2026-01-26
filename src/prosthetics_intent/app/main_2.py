@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-Універсальна валідація .keras моделі на відео (MobileNetV2 / ResNet50V2).
-- Автовизначення розміру вхідного шару моделі.
-- Правильний preprocess_input під бекбон.
-- ROI через MediaPipe Hands (як при тренуванні) — рекомендується.
-- Оверлеї: назва класу, впевненість, margin топ-2, смужки ймовірностей, FPS.
-- Збереження анотованого відео та CSV.
-- Знімки моментів подій (Grasp/Release) + показ у додаткових вікнах.
-- Опційна відправка команд на Arduino з **автопошуком порту**.
+Universal validation of a .keras model on video (MobileNetV2 / ResNet50V2).
+Automatic detection of the model input layer size.
+Correct preprocess_input according to the backbone.
+ROI via MediaPipe Hands (as used during training).
+Overlays: class name, confidence score, top-2 margin, probability bars, FPS.
+Saving annotated video and CSV.
+Snapshots of event moments (Grasp/Release) with display in additional windows.
+Optional sending of commands to Arduino with automatic port detection..
 """
 
 import os, time, csv, glob, argparse
@@ -77,7 +77,7 @@ def open_serial_auto(baud: int):
     prefer = [p for p in ports if any(k in p.lower() for k in ["usbmodem", "usbserial", "cu.usb", "tty.usb"])]
     cands = prefer or ports
 
-    # 3) якщо все порожнє — спробуємо glob
+    # 3) якщо все порожнє — try glob
     if not cands:
         patterns = ["/dev/tty.usbmodem*", "/dev/tty.usbserial*", "/dev/cu.usbmodem*",
                     "/dev/cu.usbserial*", "COM*", "/dev/serial/by-id/*"]
@@ -303,7 +303,7 @@ def main():
         if dt > 0: disp_fps = 0.9*disp_fps + 0.1*(1.0/dt)
         t_last = t2
 
-        # --- overlay (показуємо НАЗВУ класу)
+        # --- overlay
         color = (0,200,0) if (conf >= args.thr_color and margin >= args.ambiguity_margin) else (0,0,200)
         put_text(overlay, f"{cls} ({conf:.2f})  margin={margin:.2f}", (10, 30), 0.9, color)
         put_text(overlay, f"debounce: G={grasp_cnt} R={release_cnt}", (10, 60), 0.8, (255,200,0))
