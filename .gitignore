@@ -19,7 +19,6 @@ events_snaps_*/
 *.log
 
 # Large artifacts
-*.keras
 *.h5
 *.tflite
 *.onnx
