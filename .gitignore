@@ -18,7 +18,7 @@ events_snaps*/
 events_snaps_*/
 *.log
 
-# Large artifacts (do NOT commit)
+# Large artifacts
 *.keras
 *.h5
 *.tflite
