@@ -1,7 +1,7 @@
 import time, sys, serial
 from serial.tools import list_ports 
 
-DWELL_SEC = 1.8  # пауза в локальному циклі
+DWELL_SEC = 1.8
 
 def list_all_ports():
     ports = list(list_ports.comports())
@@ -29,7 +29,7 @@ def drain(ser, dur=0.05):
     while ser.in_waiting:
         print("RX:", ser.readline().decode(errors="ignore").strip())
 
-def main(mode="local"):  # mode: "local" або "testfw"
+def main(mode="local"):
     port = pick_port()
     print("Відкриваю порт:", port)
     ser = serial.Serial(port, 115200, timeout=0.8, write_timeout=0.8)
@@ -41,7 +41,6 @@ def main(mode="local"):  # mode: "local" або "testfw"
         print("RX:", ready or "(порожньо)")
 
         if mode == "testfw":
-            # вмикаємо безкінечний цикл на платі
             ser.write(b"TEST_ON\n"); print("TX: TEST_ON")
             print("Йде цикл на платі. Натисни Ctrl+C щоб зупинити.")
             while True:
@@ -68,8 +67,7 @@ def main(mode="local"):  # mode: "local" або "testfw"
         print("Готово.")
 
 if __name__ == "__main__":
-    # Запуск:
-    #   python port_test.py         -> локальний цикл GRASP/RELEASE
-    #   python port_test.py testfw  -> TEST_ON на платі
+    #   python port_test.py
+    #   python port_test.py testfw
     mode = "testfw" if (len(sys.argv) > 1 and sys.argv[1].lower().startswith("test")) else "local"
     main(mode)

@@ -1,4 +1,3 @@
-# arduino_comm.py
 import time
 from serial.tools import list_ports
 

@@ -1,4 +1,3 @@
-# roi_extractor.py
 import cv2
 import numpy as np
 

@@ -1,4 +1,3 @@
-# ui_app.py
 import datetime
 import threading
 import tkinter as tk
@@ -92,7 +91,6 @@ class App:
         if self.proc is None:
             self.proc = VideoProcessor(self.args, self.class_names)
             self.proc.open()
-            # опустити HUD, якщо підтримується у VideoProcessor
             if hasattr(self.proc, "set_hud_offset"):
                 try:
                     self.proc.set_hud_offset(60)
@@ -142,27 +140,22 @@ class App:
             frame_bgr, info, event_frame_bgr = self.proc.read_and_infer()
         except Exception as e:
             self.log_line(f"[ERR] {e}")
-            # навіть при помилці не зависаємо — плануємо наступний кадр
             self.root.after(10, self.loop)
             return
 
-        # закінчився стрім -> ставимо на паузу
         if frame_bgr is None:
             self.log_line("Stream ended.")
             self.on_pause()
             return
 
-        # показуємо відео (letterbox у задане вікно)
         self._show_bgr_on(self.video_lbl, frame_bgr, fit=(self.VIDEO_W, self.VIDEO_H))
 
-        # логи / знімки / arduino
         if info:
             cls, conf, event, margin = info
             now = datetime.datetime.now().strftime("%H:%M:%S")
             tvid = f"{self.proc.frame_id / max(self.proc.fps, 1e-9):06.2f}s"
             self.log_line(f"{now} | t={tvid} | {cls} ({conf:.2f}) | m={margin:.2f} | action={event or '-'}")
 
-            # важливо: НЕ ставимо на паузу під час подій
             if event == "grasp":
                 snap = (event_frame_bgr if event_frame_bgr is not None else frame_bgr).copy()
                 self._show_bgr_on(self.snap_grasp_img, snap, fit=(self.SNAP_W, self.SNAP_H))
@@ -179,7 +172,6 @@ class App:
     def _send_arduino_async(self, msg: str):
         if not self.arduino:
             return
-        # відправка у фоні, щоб не блокувати UI
         def _send():
             try:
                 self.arduino.send(msg)
@@ -208,7 +200,6 @@ class App:
 
     def log_line(self, s):
         self.logs.insert(tk.END, s)
-        # тримаємо 10 свіжих
         while self.logs.size() > 10:
             self.logs.delete(0)
 

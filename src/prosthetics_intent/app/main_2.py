@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Universal validation of a .keras model on video (MobileNetV2 / ResNet50V2).
 Automatic detection of the model input layer size.
@@ -16,7 +15,6 @@ import cv2
 import tensorflow as tf
 from collections import deque
 
-# ------------------- CLI -------------------
 def parse_args():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", required=True, help="Шлях до .keras моделі")
@@ -43,7 +41,6 @@ def parse_args():
 
     return ap.parse_args()
 
-# ---------------- preprocess під бекбони ----------------
 def get_preprocess(backend: str):
     if backend == "mobilenet_v2":
         from tensorflow.keras.applications import mobilenet_v2
@@ -59,10 +56,8 @@ def guess_backend_from_model(model: tf.keras.Model, model_path: str) -> str:
         return "mobilenet_v2"
     if "resnet" in name or "resnet50v2" in name or "resnet_v2" in name:
         return "resnet50v2"
-    # дефолт — ResNet50V2
     return "resnet50v2"
 
-# ---------------- авто-пошук серійного порту ----------------
 def open_serial_auto(baud: int):
     try:
         import serial
@@ -71,13 +66,10 @@ def open_serial_auto(baud: int):
         print("[SER] pyserial недоступний:", e)
         return None
 
-    # 1) кандидати через list_ports
     ports = [p.device for p in list_ports.comports()]
-    # 2) фільтр за звичними іменами
     prefer = [p for p in ports if any(k in p.lower() for k in ["usbmodem", "usbserial", "cu.usb", "tty.usb"])]
     cands = prefer or ports
 
-    # 3) якщо все порожнє — try glob
     if not cands:
         patterns = ["/dev/tty.usbmodem*", "/dev/tty.usbserial*", "/dev/cu.usbmodem*",
                     "/dev/cu.usbserial*", "COM*", "/dev/serial/by-id/*"]
@@ -104,7 +96,6 @@ def open_serial_auto(baud: int):
     print("[SER] Працюємо без Arduino.")
     return None
 
-# ---------------- візуальні утиліти ----------------
 def put_text(img, txt, org, scale=0.7, color=(255,255,255), thick=2):
     cv2.putText(img, txt, org, cv2.FONT_HERSHEY_SIMPLEX, scale, (0,0,0), thick+2, cv2.LINE_AA)
     cv2.putText(img, txt, org, cv2.FONT_HERSHEY_SIMPLEX, scale, color, thick, cv2.LINE_AA)
@@ -176,7 +167,6 @@ class ROIExtractor:
         else:
             roi = self._center_square_crop(frame)
 
-        # пад до квадрату і ресайз
         h, w = roi.shape[:2]
         side = max(h, w)
         top = (side-h)//2; bottom = side-h-top
@@ -185,34 +175,28 @@ class ROIExtractor:
         roi = cv2.resize(roi, out_size, interpolation=cv2.INTER_AREA)
         return roi
 
-# ---------------- основна процедура ----------------
 def main():
     args = parse_args()
 
-    # 0) Серійний порт (з автопошуком)
     ser = None
     if args.send_serial:
         ser = open_serial_auto(args.baud)
 
-    # 1) Завантаження моделі
     print("[INFO] Loading model:", args.model)
     model = tf.keras.models.load_model(args.model, compile=False)
 
-    # 2) Автовизначення бекенда і preprocess
     backend = args.backend
     if backend == "auto":
         backend = guess_backend_from_model(model, args.model)
         print(f"[INFO] Auto-detected backend → {backend}")
     PREPROC = get_preprocess(backend)
 
-    # 3) Розмір входу моделі (H,W,C)
     in_shape = model.inputs[0].shape  # (None, H, W, C)
     H, W, C = int(in_shape[1]), int(in_shape[2]), int(in_shape[3])
     if C != 3:
         raise ValueError(f"[FATAL] Модель очікує {C} канал(-и). Потрібно 3 (RGB). Пересейв/перетренуй модель.")
     IMG_SIZE = (W, H)  # порядок (W,H) для cv2.resize
 
-    # 4) Класи
     CLASS_NAMES = None
     if args.classes and os.path.exists(args.classes):
         import json
@@ -225,7 +209,6 @@ def main():
 
     print("[INFO] CLASS_NAMES:", CLASS_NAMES)
 
-    # 5) Джерело відео та Writer
     src = 0 if str(args.video).strip() == "0" else args.video
     cap = cv2.VideoCapture(src)
     if not cap.isOpened():
@@ -236,14 +219,8 @@ def main():
     h  = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     out = cv2.VideoWriter(args.out_video, fourcc, fps, (w, h))
-
-    # 6) ROI екстрактор
     roi_extractor = ROIExtractor(use_mp=bool(args.use_mp_roi), margin=args.margin)
-
-    # 6.1) Папка для евент-знімків
     os.makedirs(args.events_dir, exist_ok=True)
-
-    # 7) CSV лог
     csvf = open(args.out_csv, "w", newline="", encoding="utf-8")
     writer = csv.writer(csvf)
     #writer.writerow(["frame_id","time_sec","top_idx","top_class","conf","margin"] + [f"p_{c}" for c in CLASS_NAMES])
@@ -251,7 +228,6 @@ def main():
         ["timestamp", "frame_id", "pred_class", "pred_label", "confidence", "state", "action"]
         + [f"p_{c}" for c in CLASS_NAMES]
     )
-    # 8) Індекси подій (якщо є такі класи)
     grasp_idx   = next((i for i,c in enumerate(CLASS_NAMES) if "grasp"   in c.lower()), None)
     release_idx = next((i for i,c in enumerate(CLASS_NAMES) if "release" in c.lower()), None)
 
@@ -269,25 +245,21 @@ def main():
         frame_id += 1
         overlay = frame.copy()
 
-        # --- ROI → RGB → preprocess
         roi = roi_extractor.extract(frame, out_size=IMG_SIZE, draw_on=overlay)
         x = cv2.cvtColor(roi, cv2.COLOR_BGR2RGB).astype(np.float32)
         x = PREPROC(x)
         x = np.expand_dims(x, 0)
 
-        # --- predict + smoothing
         probs = model.predict(x, verbose=0)[0]
         smooth_buf.append(probs)
         if len(smooth_buf) > 1:
             probs = np.mean(smooth_buf, axis=0)
 
-        # --- top-2 + margin
         top2 = np.argsort(probs)[-2:][::-1]
         p1, p2 = float(probs[top2[0]]), float(probs[top2[1]])
         margin = p1 - p2
         ci = int(top2[0]); cls = CLASS_NAMES[ci]; conf = p1
 
-        # --- простий дебаунс подій (для візуальної діагностики)
         if margin >= args.ambiguity_margin:
             if grasp_idx is not None and ci == grasp_idx:
                 grasp_cnt += 1; release_cnt = 0
@@ -298,19 +270,16 @@ def main():
         else:
             grasp_cnt = release_cnt = 0
 
-        # --- FPS
         t2 = time.time(); dt = t2 - t_last
         if dt > 0: disp_fps = 0.9*disp_fps + 0.1*(1.0/dt)
         t_last = t2
 
-        # --- overlay
         color = (0,200,0) if (conf >= args.thr_color and margin >= args.ambiguity_margin) else (0,0,200)
         put_text(overlay, f"{cls} ({conf:.2f})  margin={margin:.2f}", (10, 30), 0.9, color)
         put_text(overlay, f"debounce: G={grasp_cnt} R={release_cnt}", (10, 60), 0.8, (255,200,0))
         put_text(overlay, f"FPS: {disp_fps:.1f}", (10, 90), 0.8, (200,255,200))
         bar_probs(overlay, probs, CLASS_NAMES, origin=(10, 130))
 
-        # --- ТРИГЕРИ ПОДІЙ (debounce + margin + conf) ---
         trigger_grasp = (
             grasp_idx is not None and ci == grasp_idx
             and margin >= args.ambiguity_margin
@@ -347,18 +316,14 @@ def main():
                 try: ser.write(b"RELEASE\n")
                 except Exception as e: print("[WARN] Arduino write failed:", e)
 
-        # --- вивід і запис відео
         out.write(overlay)
         if args.show:
             cv2.imshow("video_pred", overlay)
             if (cv2.waitKey(1) & 0xFF) in (27, ord('q')):
                 break
-
-        # --- CSV
         writer.writerow([frame_id, frame_id/max(fps,1e-9), ci, cls, f"{conf:.4f}", f"{margin:.4f}"]
                         + [f"{float(p):.4f}" for p in probs])
 
-    # ---------------- cleanup ----------------
     try: out.release()
     except: pass
     try: cap.release()

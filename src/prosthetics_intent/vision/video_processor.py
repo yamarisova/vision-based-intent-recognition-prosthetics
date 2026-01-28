@@ -1,4 +1,3 @@
-# video_processor.py
 import os, csv, time
 import numpy as np
 import cv2
@@ -7,7 +6,6 @@ from collections import deque
 from roi_extractor import ROIExtractor
 
 
-# -------- preprocess pickers --------
 def pick_preprocess(backend: str):
     b = backend.lower()
     if b == "mobilenet_v2":
@@ -29,39 +27,28 @@ def guess_backend(model, model_path):
 
 
 class VideoProcessor:
-    """
-    Неблокуючий процесор відео для UI:
-      - open()  -> відкриває стрім/файли та підготовлює лог/відеозапис
-      - read_and_infer() -> повертає (overlay_bgr, (cls, conf, event, margin) | None, snap_frame_bgr | None)
-      - close()
-    """
     def __init__(self, args, class_names):
         self.args = args
         self.class_names = class_names
 
-        # --- модель + бекенд
         self.model = tf.keras.models.load_model(args.model, compile=False)
         backend = args.backend if args.backend != "auto" else guess_backend(self.model, args.model)
         self.backend = backend
         self.preproc = pick_preprocess(backend)
 
-        # --- вхідний розмір моделі
         in_shape = self.model.inputs[0].shape  # (None, H, W, C)
         self.H, self.W, self.C = int(in_shape[1]), int(in_shape[2]), int(in_shape[3])
         if self.C != 3:
             raise ValueError(f"Model expects {self.C} channels. Need 3 (RGB).")
         self.img_size = (self.W, self.H)  # (W, H) for cv2.resize
 
-        # --- ROI (MediaPipe)
         self.roi = ROIExtractor(use_mp=bool(args.use_mp_roi), margin=args.margin)
 
-        # --- IO
         self.cap = None
         self.writer = None
         self.csvf = None
         self.csvw = None
 
-        # --- згладжування/події
         self.smooth = deque(maxlen=max(1, args.smooth_n))
         self.grasp_idx = next((i for i, c in enumerate(class_names) if "grasp" in c.lower()), None)
         self.release_idx = next((i for i, c in enumerate(class_names) if "release" in c.lower()), None)
@@ -69,41 +56,33 @@ class VideoProcessor:
         self.release_cnt = 0
         self.last_event = None  # "grasp" / "release" / None
 
-        # --- стани рендеру
         self.frame_id = 0
         self.fps = 30.0
         self.t_last = time.time()
         self.disp_fps = 0.0
-        self.hud_offset = 0  # зсув HUD вниз (пікселі)
+        self.hud_offset = 0
 
-        # --- FS
         os.makedirs(args.events_dir, exist_ok=True)
         log_dir = os.path.dirname(args.log_csv)
         if log_dir:
             os.makedirs(log_dir, exist_ok=True)
 
-    # ---- API для UI ----
     def set_hud_offset(self, offset_px: int):
-        """Опустити всі HUD елементи на offset_px пікселів."""
         self.hud_offset = int(max(0, offset_px))
 
     def open(self):
-        # відеоджерело
         src = 0 if str(self.args.video).strip() == "0" else self.args.video
         self.cap = cv2.VideoCapture(src)
         if not self.cap.isOpened():
             raise RuntimeError(f"Cannot open video source: {self.args.video}")
 
-        # метадані стріму
         fps = self.cap.get(cv2.CAP_PROP_FPS)
         self.fps = fps if fps and fps > 0 else 30.0
         w = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         if w <= 0 or h <= 0:
-            # запасний варіант
             w, h = 1280, 720
 
-        # ===== активувати відеозапис сесії, якщо args.out_video встановлено =====
         self.writer = None
         out_path = getattr(self.args, "out_video", "")
         if out_path:
@@ -112,39 +91,12 @@ class VideoProcessor:
             self.writer = cv2.VideoWriter(out_path, fourcc, self.fps, (w, h))
             print(f"[REC] Recording this session to: {out_path}")
 
-        # CSV
         self.csvf = open(self.args.log_csv, "w", newline="", encoding="utf-8")
         self.csvw = csv.writer(self.csvf)
         self.csvw.writerow(
             ["frame_id", "time_sec", "top_idx", "top_class", "conf", "margin"]
             + [f"p_{c}" for c in self.class_names]
         )
-    # def open(self):
-    #     # відеоджерело
-    #     src = 0 if str(self.args.video).strip() == "0" else self.args.video
-    #     self.cap = cv2.VideoCapture(src)
-    #     if not self.cap.isOpened():
-    #         raise RuntimeError(f"Cannot open video source: {self.args.video}")
-    #
-    #     # метадані стріму
-    #     fps = self.cap.get(cv2.CAP_PROP_FPS)
-    #     self.fps = fps if fps and fps > 0 else 30.0
-    #     w = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    #     h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    #
-    #     # writer
-    #     if getattr(self.args, "out_video", None):
-    #         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    #         self.writer = cv2.VideoWriter(self.args.out_video, fourcc, self.fps, (w, h))
-    #
-    #     # CSV
-    #     self.csvf = open(self.args.log_csv, "w", newline="", encoding="utf-8")
-    #     self.csvw = csv.writer(self.csvf)
-    #     self.csvw.writerow(
-    #         ["frame_id", "time_sec", "top_idx", "top_class", "conf", "margin"]
-    #         + [f"p_{c}" for c in self.class_names]
-    #     )
-    #
     def close(self):
         try:
             if self.writer:
@@ -164,31 +116,12 @@ class VideoProcessor:
         except:
             pass
 
-    # def close(self):
-    #     try:
-    #         if self.writer:
-    #             self.writer.release()
-    #     except:
-    #         pass
-    #     try:
-    #         if self.cap:
-    #             self.cap.release()
-    #     except:
-    #         pass
-    #     try:
-    #         if self.csvf:
-    #             self.csvf.flush()
-    #             self.csvf.close()
-    #     except:
-    #         pass
-
-    # ---- основний крок ----
     def read_and_infer(self):
         """
         :return:
             overlay_bgr: np.ndarray | None
             info: (cls:str, conf:float, event:str|None, margin:float) | None
-            snap_frame_bgr: np.ndarray | None   # кадр для панелі SNAP (повертається тільки при події)
+            snap_frame_bgr: np.ndarray | None
         """
         ok, frame = self.cap.read()
         if not ok:
@@ -197,19 +130,16 @@ class VideoProcessor:
         self.frame_id += 1
         overlay = frame.copy()
 
-        # --- ROI -> RGB -> preprocess
         roi = self.roi.extract(frame, out_size=self.img_size, draw_on=overlay)
         x = cv2.cvtColor(roi, cv2.COLOR_BGR2RGB).astype(np.float32)
         x = self.preproc(x)
         x = np.expand_dims(x, 0)
 
-        # --- predict + smoothing
         probs = self.model(x, training=False).numpy()[0]
         self.smooth.append(probs)
         if len(self.smooth) > 1:
             probs = np.mean(self.smooth, axis=0)
 
-        # --- top-2 + margin
         top2 = np.argsort(probs)[-2:][::-1]
         p1, p2 = float(probs[top2[0]]), float(probs[top2[1]])
         margin = p1 - p2
@@ -217,7 +147,6 @@ class VideoProcessor:
         cls = self.class_names[ci]
         conf = p1
 
-        # --- debounce counters
         if margin >= self.args.ambiguity_margin:
             if self.grasp_idx is not None and ci == self.grasp_idx:
                 self.grasp_cnt += 1
@@ -230,14 +159,12 @@ class VideoProcessor:
         else:
             self.grasp_cnt = self.release_cnt = 0
 
-        # --- FPS
         t2 = time.time()
         dt = t2 - self.t_last
         if dt > 0:
             self.disp_fps = 0.9 * self.disp_fps + 0.1 * (1.0 / dt)
         self.t_last = t2
 
-        # --- overlay (з урахуванням зсуву HUD)
         y_off = self.hud_offset
         color = (0, 200, 0) if (conf >= self.args.thr_color and margin >= self.args.ambiguity_margin) else (0, 0, 200)
         self._put_text(overlay, f"{cls} ({conf:.2f})  m={margin:.2f}", (10, 30 + y_off), 0.9, color)
@@ -246,7 +173,6 @@ class VideoProcessor:
 
         self._bars(overlay, probs, self.class_names, origin=(10, 134 + y_off))
 
-        # --- triggers (не блокуємо, просто віддаємо кадр у UI)
         snap_frame = None
         event = None
 
@@ -278,18 +204,11 @@ class VideoProcessor:
             snap_frame = overlay.copy()
             cv2.imwrite(os.path.join(self.args.events_dir, f"release_{self.frame_id:06d}.jpg"), snap_frame)
 
-        # --- CSV
         if self.csvw:
             self.csvw.writerow(
                 [self.frame_id, self.frame_id / max(self.fps, 1e-9), ci, cls, f"{conf:.4f}", f"{margin:.4f}"]
                 + [f"{float(p):.4f}" for p in probs]
             )
-
-        # --- write annotated video
-        # if self.writer:
-        #     self.writer.write(overlay)
-        #
-        # return overlay, (cls, conf, event, margin), snap_frame
 
         if self.writer is not None:
                 self.writer.write(overlay)
@@ -313,6 +232,3 @@ class VideoProcessor:
                 (x0 + w + 10, y + h - 3),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2
             )
-
-        # підписи справа — короткі, щоб не лізли у відео (UI показує повні імена у логах)
-
